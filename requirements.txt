@@ -1,0 +1,23 @@
+# Core dependencies
+pandas>=2.0
+matplotlib>=3.3
+pvlib>=0.9
+streamlit>=1.45
+scikit-learn>=1.6
+tqdm>=4.60
+statsmodels>=0.12
+joblib>=1.0
+plotly>=5.0
+
+# IMPORTANT: Install PyTorch separately first (If you are using ROCm use the command below)
+# pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.3
+
+# For NVIDIA GPUs, use the command below
+# pip3 install --no-cache-dir torch torchvision torchaudio
+
+# For CPU only (didn't test on cpu, it will be slower but should work properly), use the command below
+# pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# "--no-cache-dir" is preferable to avoid cache issues due to the large size of the model files. => "ValueError: Memoryview is too large"
+
+# Note: I'm using rx 6650 xt 
