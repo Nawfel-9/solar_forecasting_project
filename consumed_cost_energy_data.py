@@ -80,7 +80,7 @@ def main():
     import os
     
     # Define file path
-    file_path = r"C:\Users\Genji\Desktop\solar_forecasting_project\data\Electric_Consumption_And_Cost__2010_-_Feb_2025__20250311.csv"
+    file_path = "data/Electric_Consumption_And_Cost__2010_-_Feb_2025__20250311.csv"
     
     # Process data
     df_consumed_grouped = load_consumption_data(file_path)
