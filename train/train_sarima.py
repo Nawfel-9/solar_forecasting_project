@@ -10,7 +10,7 @@ import joblib
 
 def train_and_evaluate(forecast_steps=52):
     # Load data
-    cost, consumed = load_energy_data()
+    cost, consumed, __ = load_energy_data()
     
     # Split data (20% test by default)
     train_cost, test_cost = prepare_train_test(cost)
