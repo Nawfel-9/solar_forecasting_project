@@ -11,7 +11,7 @@ These instructions will guide you through setting up the project environment, pr
 ### **a. Clone the Repository**
 Open your terminal or command prompt and run the following commands:
 ```
-git clone [https://github.com/Nawfel-9/SolarPower-Forecast.git](https://github.com/Nawfel-9/SolarPower-Forecast.git)
+git clone https://github.com/Nawfel-9/solar_forecasting_project
 cd SolarPower-Forecast
 ```
 
