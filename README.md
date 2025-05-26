@@ -42,7 +42,7 @@ You should see the virtual environment's name (e.g., (venv) or (solarforecast_en
 With your virtual environment activated, install the necessary Python packages.
 First, install PyTorch (the command below specifies the CPU version for broader compatibility or check requirements.txt if you want to use gpu):
 ```
-pip install --no-cache-dir torch torchvision torchaudio --index-url [https://download.pytorch.org/whl/cpu](https://download.pytorch.org/whl/cpu)
+pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 ```
 
 Then, install the remaining project dependencies listed in requirements.txt:
