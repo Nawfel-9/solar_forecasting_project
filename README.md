@@ -12,7 +12,7 @@ These instructions will guide you through setting up the project environment, pr
 Open your terminal or command prompt and run the following commands:
 ```
 git clone https://github.com/Nawfel-9/solar_forecasting_project
-cd SolarPower-Forecast
+cd solar_forecasting_project
 ```
 
 ### **b. Create and Activate a Virtual Environment**
