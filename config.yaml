@@ -1,0 +1,93 @@
+# File Paths
+data_paths:
+  raw_dir: "data/" # Assuming you might add this later
+  preprocessed_dir: "data/preprocessed/"
+  energy_cost_csv: "energy_cost.csv" # Relative to preprocessed_dir
+  energy_consumed_csv: "energy_consumed.csv"
+  energy_generated_csv: "energy_generated.csv"
+  lstm_target_column_name: "Generated Energy (W)"
+  models_dir: "models/checkpoints_et_graphs/"
+  lstm_model_name: "lstm_solar_generator.pth" # Changed from best_model_energy_generated.pth for clarity
+  sarima_cost_model_name: "sarima_cost_model.pkl"
+  sarima_consumed_model_name: "sarima_consumed_model.pkl"
+  lstm_scaler_name: "lstm_scaler.pkl"
+
+# Data Preprocessing
+preprocessing:
+  test_size: 0.2 # Proportion of full_series for the final test set
+  validation_size_from_train: 0.15 # Proportion of the initial training set (train_raw) to be used for validation
+  lstm_time_steps: 168 # e.g., 2 weeks of hourly data: 24 * 7 * 2
+
+# Model Parameters
+lstm_params:
+  input_size: 5
+  hidden_size: 32
+  num_layers: 1
+  dropout: 0.3030108548374505
+  output_chunk_size: 12
+  bidirectional: true
+
+sarima_params:
+  # Common orders, or specify per model if different
+  cost:
+    order: [1, 1, 1] # p, d, q
+    seasonal_order: [1, 1, 0, 52] # P, D, Q, s - REVIEW 's' based on data frequency
+  consumed:
+    order: [1, 1, 1]
+    seasonal_order: [1, 1, 0, 52] # REVIEW 's'
+
+# Training Parameters
+training_params:
+  run_optuna_search: false
+  optuna_n_trials: 50
+  lstm_epochs: 50
+  lstm_batch_size: 128
+  lstm_learning_rate: 0.0016297571709647026
+  lstm_weight_decay: 0.0000217832965569439 # If used by optimizer, belongs here
+  early_stopping_patience: 15
+
+# Forecasting
+forecast_horizons:
+  default_app_horizon: "1 Month" # Or whatever matches your app's default
+  training_eval_horizon_weekly: 4 # e.g., 4 weeks for SARIMA evaluation
+  training_eval_horizon_hourly: 96 # e.g., 96 hours for LSTM evaluation
+  # Steps mapping could also live here if preferred over hardcoding in app/visualisation
+  steps_map:
+    "1 Month": # Approximate for simplicity, or be more precise
+      hourly: 720 # 24*30
+      weekly: 4
+    "6 Months":
+      hourly: 4320 # 24*180
+      weekly: 24
+    "1 Year":
+      hourly: 8760 # 24*365
+      weekly: 52
+
+# App settings
+# solar_forecasting_project/config.yaml
+# ... (data_paths, preprocessing, lstm_params, sarima_params, training_params, forecast_horizons, plotting_colors)
+
+app_settings:
+  default_theme: "Light"
+  # For financial calculation defaults in Streamlit sidebar
+  default_num_panels: 10000
+  default_panel_capacity_kw: 0.750 # e.g., 350W panel
+  default_panel_efficiency: 0.85   # Overall system efficiency (panel, inverter, wiring, etc.)
+  default_export_tariff: 0.05    # Example: $0.05 per kWh for exported energy
+
+lstm_reference_system:
+  num_panels: 10000
+  panel_capacity_w: 750 # Watts
+
+caching:
+  model_ttl_seconds: 3600 # Time To Live for cached models (in seconds)
+
+plotting_config: # Primarily for Matplotlib, Plotly can adapt or use its own styling
+  figure_size_mpl: [14, 11]
+  tight_layout_pad_mpl: 4.5
+  date_format_mpl: '%Y-%m-%d %Hh'
+  date_format_weekly_mpl: '%Y-%m-%d'
+  legend_fontsize_mpl: 10
+  grid_visible_mpl: True
+  grid_style_mpl: ':'
+  # ... any other common matplotlib settings

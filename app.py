@@ -1,508 +1,284 @@
-# app.py
+# solar_forecasting_project/app.py
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
-import torch
-import joblib
 import numpy as np
-from datetime import datetime
-from models.lstm_model import LSTM
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
+import torch
+from pathlib import Path
+from datetime import datetime, date
+import matplotlib.pyplot as plt
+from typing import Dict, Any, Optional, List
 
-from utils.preprocessing import align_frequencies,create_lstm_sequences,fit_scaler,scale_data,inverse_scale,get_device
-from utils.visualization import plot_multiple_forecasts
+# Project-specific imports from refactored modules
+from utils.config_loader import load_config, get_model_path
+from utils.preprocessing import (
+    get_device,
+    load_all_models_and_scaler,
+    load_energy_data_from_config,
+    align_forecast_data,
+    get_steps_from_config,
+    scale_data,
+    inverse_scale,
+    add_cyclical_time_features  # Crucial for the new forecast method
+)
+from utils.evaluation import calculate_financial_summary
+from utils.visualisation import plot_forecasts_matplotlib, create_plotly_forecast_chart
 
-# Configure page settings
+# --- Page and App Configuration ---
+CONFIG = load_config()
 st.set_page_config(
-    page_title="Solar Forecast Interface",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title=CONFIG.get('app_config', {}).get('page_title', "Solar Forecasting & Savings"),
+    layout=CONFIG.get('app_config', {}).get('layout', "wide"),
+    initial_sidebar_state=CONFIG.get('app_config', {}).get('initial_sidebar_state', "expanded")
 )
 
-# Custom CSS styling
+# --- Custom CSS ---
 st.markdown("""
 <style>
-    .metric-box {
-        padding: 20px;
-        border-radius: 10px;
-        background-color: #f0f2f6;
-        margin: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .stMetricValue { font-size: 28px !important; }
+    .stMetricLabel { font-size: 16px !important; }
+    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+    button[data-testid="baseButton-primary"] {
+        background-color: #FF8C00; color: white; border: none; padding: 10px 24px; border-radius: 5px;
     }
-    .stPlot {
-        border-radius: 12px;
-        padding: 15px;
-        background-color: white;
-    }
-    .summary-card {
-        padding: 15px;
-        border-radius: 10px;
-        background-color: white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        margin: 10px 0;
-        transition: transform 0.3s;
-    }
-    .summary-card:hover {
-        transform: translateY(-5px);
-    }
-    .summary-icon {
-        font-size: 24px;
-        float: right;
-        margin-top: -5px;
+    button[data-testid="baseButton-primary"]:hover {
+        background-color: #FFA500; color: white;
     }
 </style>
 """, unsafe_allow_html=True)
 
-def main_interface():
-    st.title("🌞 Solar Forecast Interface")
-    
-    # Sidebar controls
+# --- Main Application ---
+def run_app():
+    st.title(CONFIG.get('app_config', {}).get('main_title', "🌞 Solar Panel Forecast & Savings Estimator"))
+
+    # Load models once at the start of the app session
+    with st.spinner("Loading predictive models and data utilities..."):
+        loaded_models_and_scaler = load_all_models_and_scaler()
+
+    # Check for critical components
+    critical_components = ['lstm', 'lstm_scaler', 'sarima_cost', 'sarima_consumed']
+    missing_components = [comp for comp in critical_components if loaded_models_and_scaler.get(comp) is None]
+    if missing_components:
+        st.error(f"Critical component(s) failed to load: {', '.join(missing_components)}. Please train models first.")
+        st.stop()
+
+    lstm_model = loaded_models_and_scaler['lstm']
+    lstm_scaler = loaded_models_and_scaler['lstm_scaler']
+    sarima_cost_model = loaded_models_and_scaler['sarima_cost']
+    sarima_consumed_model = loaded_models_and_scaler['sarima_consumed']
+    device = get_device()
+
+    # --- Sidebar ---
     with st.sidebar:
-        st.header("Settings")
-        forecast_horizon = st.selectbox(
-            "Forecast Horizon",
-            ["1 Week", "2 Weeks", "1 Month"],
-            index=2
-        )
-        show_raw_data = st.checkbox("Show Raw Data Preview", False)
-        
-        # Plot type selection
-        st.subheader("Visualization")
-        plot_type = st.radio(
-            "Chart Type",
-            ["Matplotlib", "Plotly"],
-            index=0
-        )
-        
-        # Add date range selector for historical data
-        st.subheader("Historical Data Range")
-        start_date = st.date_input("Start Date", value=pd.to_datetime("now") - pd.Timedelta(days=30))
-        end_date = st.date_input("End Date", value=pd.to_datetime("now"))
-        
-        # Theme selection
-        st.subheader("Appearance")
-        theme = st.selectbox(
-            "Application Theme",
-            ["Light", "Dark", "Solar"],
-            index=0
-        )
-        
-        # Apply selected theme
-        if theme == "Dark":
-            st.markdown("""
-            <style>
-                .stApp {
-                    background-color: #121212;
-                    color: #E0E0E0;
-                }
-                .metric-box, .summary-card {
-                    background-color: #1E1E1E !important;
-                    color: #E0E0E0 !important;
-                }
-            </style>
-            """, unsafe_allow_html=True)
-        elif theme == "Solar":
-            st.markdown("""
-            <style>
-                .stApp {
-                    background-color: #263238;
-                    color: #FAFAFA;
-                }
-                .metric-box, .summary-card {
-                    background-color: #37474F !important;
-                    color: #FAFAFA !important;
-                }
-            </style>
-            """, unsafe_allow_html=True)
-        
+        # (Your sidebar code remains the same)
+        st.header("⚙️ Configuration")
+        app_cfg = CONFIG.get('app_settings', {})
+        horizon_options = list(CONFIG['forecast_horizons']['steps_map'].keys())
+        default_horizon_key = CONFIG['forecast_horizons']['default_app_horizon']
+        default_horizon_index = horizon_options.index(default_horizon_key) if default_horizon_key in horizon_options else 0
+        selected_horizon_key = st.selectbox("Select Forecast Horizon:", options=horizon_options, index=default_horizon_index)
         st.markdown("---")
-        st.markdown("**Model Paths**")
-        st.code(f"""
-        Generated: models/best_model_energy_generated.pth
-        Cost: models/sarima_cost_model.pkl 
-        Consumed: models/sarima_consumed_model.pkl
-        """)
-    
-    # Create tabs
-    tab1, tab2 = st.tabs(["Forecast Dashboard", "Historical Analysis"])
-    
-    # Main content area - Tab 1: Forecast Dashboard
-    with tab1:
-        if st.button("Run Full Forecast Pipeline", type="primary"):
-            # Initialize status container and progress tracking first
-            status_container = st.status("Initializing...", expanded=True)
-            progress_bar = st.progress(0)
+        st.subheader("☀️ Solar Panel System (Your Desired Setup)")
+        num_panels = st.number_input("Number of Solar Panels:", min_value=1, value=int(app_cfg.get('default_num_panels', 10)), step=1)
+        default_panel_cap_kw = float(CONFIG['app_settings'].get('default_panel_capacity_kw', 0.350))
+        panel_capacity_kw = st.number_input("Capacity per Panel (kW):", min_value=0.010, value=default_panel_cap_kw, step=0.010, format="%.3f")
+        panel_efficiency = st.slider("System Efficiency (%):", min_value=50, max_value=100, value=int(app_cfg.get('default_panel_efficiency', 0.85) * 100), step=1) / 100.0
+        export_tariff = st.number_input("Export Tariff ($/kWh, if any):", min_value=0.00, value=float(app_cfg.get('default_export_tariff', 0.05)), step=0.001, format="%.3f")
+        st.markdown(f"*Total User-Defined System Capacity: **{num_panels * panel_capacity_kw:.2f} kWp***")
+        st.markdown("---")
+        st.subheader("📊 Chart & Data")
+        plot_engine = st.radio("Chart Engine:", ["Plotly (Interactive)", "Matplotlib (Static)"], index=0)
+
+    # --- Main Content Tabs ---
+    tab_dashboard, tab_historical, tab_details = st.tabs(["📈 Forecast Dashboard", "📊 Historical Data", "🛠️ Config Info"])
+
+    with tab_dashboard:
+        st.header("Forecasts & Financial Impact")
+        if st.button("🚀 Generate Forecast & Estimate Savings", type="primary", use_container_width=True):
             
-            try:
-                # Configuration
-                device = get_device()
-                hourly_steps = 24 * 30 * 1  # 1 month
-                weekly_steps = 4
-                model_paths = {
-                    'generated': Path("models/best_model_energy_generated.pth"),
-                    'cost': Path("models/sarima_cost_model.pkl"),
-                    'consumed': Path("models/sarima_consumed_model.pkl")
-                }
+            # Initialize variables to hold results before the status block
+            financial_summary = None
+            historical_for_plot = None
+            forecasts_for_plot = None
+            aligned_forecast_df = None
+            user_system_actual_power_kw_series_for_plot = None
+            forecasts_raw_model_output = None # Hold raw forecasts for plotting
+            
+            # --- COMPUTATION BLOCK: Use st.status for all calculations ---
+            with st.status("Running forecasting pipeline...", expanded=True) as forecast_pipeline_status:
+                try:
+                    # 1. Load Data
+                    forecast_pipeline_status.update(label="Loading historical data...")
+                    hist_cost, hist_consumed, hist_gen_actual_reference_df = load_energy_data_from_config()
+                    if hist_gen_actual_reference_df.empty or hist_cost.empty or hist_consumed.empty:
+                        st.error("Failed to load historical data."); st.stop()
+                    target_col = CONFIG['data_paths']['lstm_target_column_name']
+                    hist_gen_actual_reference = hist_gen_actual_reference_df[target_col]
 
-                # Load data
-                status_container.update(label="**1/6** Loading data...", state="running")
-                generated_hourly = pd.read_csv("data/preprocessed/energy_generated.csv", 
-                                             index_col=0, parse_dates=True).squeeze()
-                cost_weekly = pd.read_csv("data/preprocessed/energy_cost.csv", 
-                                        index_col=0, parse_dates=True).squeeze()
-                consumed_weekly = pd.read_csv("data/preprocessed/energy_consumed.csv", 
-                                            index_col=0, parse_dates=True).squeeze()
-                progress_bar.progress(15)
+                    # 2. Get Steps
+                    forecast_steps_config = get_steps_from_config(selected_horizon_key, CONFIG)
+                    hourly_steps = forecast_steps_config.get('hourly', 720)
+                    weekly_steps_sarima = forecast_steps_config.get('weekly', 4)
 
-                # Align frequencies
-                status_container.update(label="**2/6** Aligning frequencies...", state="running")
-                generated, cost, consumed = align_frequencies(generated_hourly, cost_weekly, consumed_weekly)
-                progress_bar.progress(30)
+                    # 3. LSTM Generation Forecast (Iterative Direct Multi-Step)
+                    forecast_pipeline_status.update(label="Forecasting solar generation (LSTM)...")
+                    lstm_params = CONFIG['lstm_params']; time_steps = CONFIG['preprocessing']['lstm_time_steps']
+                    output_chunk_size = lstm_params.get('output_chunk_size', 24)
+                    
+                    all_predictions_unscaled = []
+                    # (Full forecasting loop logic as provided before) ...
+                    if len(hist_gen_actual_reference_df) >= time_steps:
+                        last_sequence_df = hist_gen_actual_reference_df.iloc[-time_steps:]
+                        current_sequence_scaled_df = last_sequence_df.copy()
+                        current_sequence_scaled_df[target_col] = scale_data(last_sequence_df[target_col], lstm_scaler)
+                        lstm_model.eval()
+                        with torch.no_grad():
+                            for _ in range(int(np.ceil(hourly_steps / output_chunk_size))):
+                                input_tensor = torch.tensor(current_sequence_scaled_df.values, dtype=torch.float32).unsqueeze(0).to(device)
+                                prediction_chunk_scaled = lstm_model(input_tensor).squeeze(0).cpu().numpy()
+                                prediction_chunk_unscaled = inverse_scale(prediction_chunk_scaled, lstm_scaler)
+                                all_predictions_unscaled.append(prediction_chunk_unscaled)
+                                last_timestamp = current_sequence_scaled_df.index[-1]
+                                future_dates = pd.date_range(start=last_timestamp + pd.Timedelta(hours=1), periods=output_chunk_size, freq='h')
+                                future_chunk_df = pd.DataFrame(index=future_dates)
+                                future_chunk_df = add_cyclical_time_features(future_chunk_df)
+                                future_chunk_df[target_col] = prediction_chunk_unscaled
+                                future_chunk_df[target_col] = scale_data(future_chunk_df[target_col], lstm_scaler)
+                                future_chunk_df = future_chunk_df[current_sequence_scaled_df.columns]
+                                current_sequence_scaled_df = pd.concat([current_sequence_scaled_df.iloc[output_chunk_size:], future_chunk_df])
+                        final_predictions_unscaled = np.concatenate(all_predictions_unscaled)[:hourly_steps]
+                        forecast_start_date = hist_gen_actual_reference.index[-1] + pd.Timedelta(hours=1)
+                        forecast_dates = pd.date_range(start=forecast_start_date, periods=len(final_predictions_unscaled), freq='h')
+                        forecasts_raw_model_output = {'generated': {'values': final_predictions_unscaled, 'dates': forecast_dates}}
+                    else: st.warning(f"Not enough historical data for LSTM."); forecasts_raw_model_output = {'generated': {}}
+                    
+                    # 4. SARIMA Forecasts
+                    forecast_pipeline_status.update(label="Forecasting cost & consumption (SARIMA)...")
+                    fc_cost_mean, fc_cost_ci = sarima_cost_model.forecast(steps=weekly_steps_sarima)
+                    forecasts_raw_model_output['cost'] = {'values': fc_cost_mean.values, 'dates': fc_cost_mean.index, 'conf_int': fc_cost_ci}
+                    fc_cons_mean, fc_cons_ci = sarima_consumed_model.forecast(steps=weekly_steps_sarima)
+                    forecasts_raw_model_output['consumed'] = {'values': fc_cons_mean.values, 'dates': fc_cons_mean.index, 'conf_int': fc_cons_ci}
 
-                # Generate forecasts
-                forecasts = {
-                    'generated': {'freq': 'H', 'values': None, 'dates': None},
-                    'cost': {'freq': 'W', 'values': None, 'dates': None},
-                    'consumed': {'freq': 'W', 'values': None, 'dates': None}
-                }
+                    # 5. Align Data
+                    forecast_pipeline_status.update(label="Aligning data to hourly resolution...")
+                    master_hourly_idx = forecasts_raw_model_output.get('generated', {}).get('dates')
+                    if master_hourly_idx is None or master_hourly_idx.empty:
+                         master_hourly_idx = pd.date_range(start=hist_gen_actual_reference.index[-1] + pd.Timedelta(hours=1), periods=hourly_steps, freq='h')
+                    aligned_forecast_df = align_forecast_data(forecasts_raw_model_output, master_hourly_idx)
+                    
+                    # 6. Financial Evaluation with Scaling
+                    forecast_pipeline_status.update(label="Calculating financial impact...")
+                    ref_system_cfg = CONFIG.get('lstm_reference_system', {})
+                    ref_num_panels = ref_system_cfg.get('num_panels', 0); ref_panel_capacity_w = ref_system_cfg.get('panel_capacity_w', 0)
+                    if not (ref_num_panels > 0 and ref_panel_capacity_w > 0):
+                        st.error("CRITICAL CONFIG ERROR: 'lstm_reference_system' in config.yaml is missing or zero."); financial_summary = {}
+                    else:
+                        financial_summary = calculate_financial_summary(
+                            aligned_forecast_df_hourly=aligned_forecast_df.copy(),
+                            user_num_panels=num_panels, user_panel_capacity_kw=panel_capacity_kw,
+                            reference_num_panels=ref_num_panels, reference_panel_capacity_w=ref_panel_capacity_w,
+                            panel_efficiency=panel_efficiency, export_tariff_rate=export_tariff,
+                            import_tariff_col='cost_per_kwh'
+                        )
+                    
+                    # 7. Prepare Scaled Data for Plotting
+                    scaled_hist_gen_series_for_plot = hist_gen_actual_reference.copy()
+                    user_system_actual_power_kw_series_for_plot = pd.Series(dtype=float)
+                    if ref_num_panels > 0 and ref_panel_capacity_w > 0:
+                        ref_panel_cap_kw = float(ref_panel_capacity_w) / 1000.0; ref_total_kwp = float(ref_num_panels) * ref_panel_cap_kw
+                        user_total_kwp = float(num_panels) * float(panel_capacity_kw)
+                        scaling_factor = user_total_kwp / ref_total_kwp if ref_total_kwp > 0 else 0
+                        if not hist_gen_actual_reference.empty: scaled_hist_gen_series_for_plot = hist_gen_actual_reference * scaling_factor
+                        if 'generation_kw' in aligned_forecast_df:
+                            user_gen_potential = aligned_forecast_df['generation_kw'] * scaling_factor
+                            user_gen_actual_kw = user_gen_potential * panel_efficiency
+                            user_system_actual_power_kw_series_for_plot = pd.Series(user_gen_actual_kw.values, index=master_hourly_idx)
+                    
+                    forecast_pipeline_status.update(label="Pipeline completed successfully!", state="complete", expanded=False)
 
-                # LSTM Forecast
-                status_container.update(label="**3/6** Running LSTM forecast...", state="running")
-                scaler = fit_scaler(generated)
-                scaled_data = scale_data(generated, scaler)
-                X, _ = create_lstm_sequences(scaled_data, time_steps=24*7*2)
+                except Exception as e:
+                    st.error(f"An error occurred: {e}"); import traceback; st.error(f"Traceback: {traceback.format_exc()}");
+                    financial_summary = None # Ensure summary is None on error
+                    forecast_pipeline_status.update(label=f"Pipeline Error: {e}", state="error")
+            
+            # --- DISPLAY BLOCK: This is now OUTSIDE the st.status block ---
+            if financial_summary: # Only display results if calculations were successful
+                horizon_days = financial_summary.get('total_hours_forecasted', hourly_steps) // 24
+                st.subheader("📊 Key Forecast Metrics")
+                cols_metrics = st.columns(4)
+                cols_metrics[0].metric("☀️ Energy Generated (Your System)", f"{financial_summary.get('total_energy_generated_kwh_user_system', 0):.0f} kWh", help=f"Total solar energy your system is forecasted to generate over {horizon_days} days.")
+                cols_metrics[1].metric("🏠 Energy Consumed", f"{financial_summary.get('total_energy_consumed_kwh', 0):.0f} kWh", help=f"Total electricity forecasted for consumption over {horizon_days} days.")
+                cols_metrics[2].metric("💰 Avg. Import Price", f"${financial_summary.get('average_import_price_forecasted', 0.0):.3f} /kWh", help=f"Average forecasted price of grid electricity over {horizon_days} days.")
+                cols_metrics[3].metric("💸 Gross Value of Solar", f"${financial_summary.get('net_savings_usd_simplified', 0.0):.2f}", help=f"Total Non-Negative Generated kWh * Avg. Import Price.")
+
+                with st.expander("Visual Forecasts", expanded=True):
+                    historical_for_plot = {'generated': scaled_hist_gen_series_for_plot, 'cost': hist_cost, 'consumed': hist_consumed}
+                    if plot_engine == "Plotly (Interactive)":
+                        plotly_fig = create_plotly_forecast_chart(historical_for_plot, forecasts_raw_model_output, user_system_generation_forecast_kw=user_system_actual_power_kw_series_for_plot, aligned_hourly_overlay=aligned_forecast_df)
+                        st.plotly_chart(plotly_fig, use_container_width=True)
+                    else:
+                        forecasts_for_mpl_plot = {'cost': forecasts_raw_model_output.get('cost',{}), 'consumed': forecasts_raw_model_output.get('consumed',{})}
+                        if not user_system_actual_power_kw_series_for_plot.empty:
+                            forecasts_for_mpl_plot['generated'] = {'dates': user_system_actual_power_kw_series_for_plot.index, 'values': user_system_actual_power_kw_series_for_plot.values}
+                        else: forecasts_for_mpl_plot['generated'] = forecasts_raw_model_output.get('generated',{})
+                        mpl_fig = plot_forecasts_matplotlib(historical_for_plot, forecasts_for_mpl_plot, aligned_hourly_overlay=aligned_forecast_df)
+                        st.pyplot(mpl_fig)
                 
-                model = LSTM().to(device)
-                model.load_state_dict(torch.load(model_paths['generated'], map_location=device), strict=True)
-                last_input = torch.tensor(X[-1], dtype=torch.float32).view(1, -1, 1).to(device)
-                scaled_forecast = model.forecast_series(model, last_input, hourly_steps)
-                
-                forecasts['generated']['values'] = inverse_scale(np.array(scaled_forecast), scaler)
-                forecasts['generated']['dates'] = pd.date_range(
-                    start=generated.index[-1] + pd.Timedelta(hours=1), 
-                    periods=hourly_steps, 
-                    freq='h'
-                )
-                progress_bar.progress(50)
+                with st.expander("Detailed Financial Summary & Data Export", expanded=False):
+                    st.subheader("Detailed Financial Breakdown")
+                    fin_cols = st.columns(2)
+                    fin_cols[0].metric("Cost without Solar:", f"${financial_summary.get('cost_without_solar_usd',0.0):.2f}")
+                    fin_cols[0].metric("Net Cost with Solar (Import - Export Revenue):", f"${financial_summary.get('cost_with_solar_usd',0.0):.2f}")
+                    fin_cols[1].metric("Comprehensive Net Savings:", f"${financial_summary.get('net_savings_usd_comprehensive',0.0):.2f}")
+                    fin_cols[1].metric("Revenue from Export:", f"${financial_summary.get('revenue_from_export_usd',0.0):.2f}")
+                    st.markdown(f"_*Calculations based on a {num_panels}-panel, {panel_capacity_kw*1000:.0f}W/panel system with {panel_efficiency*100:.0f}% efficiency.*_")
 
-                # SARIMA Forecasts
-                status_container.update(label="**4/6** Running SARIMA forecasts...", state="running")
-                sarima_cost = joblib.load(model_paths['cost'])
-                sarima_consumed = joblib.load(model_paths['consumed'])
-                
-                for target, model in [('cost', sarima_cost), ('consumed', sarima_consumed)]:
-                    forecast = model.get_forecast(steps=weekly_steps)
-                    forecasts[target]['values'] = forecast.predicted_mean.values
-                    forecasts[target]['dates'] = pd.date_range(
-                        start=locals()[f"{target}_weekly"].index[-1] + pd.Timedelta(weeks=1), 
-                        periods=weekly_steps, 
-                        freq='W'
-                    )
-                    forecasts[target]['conf_int'] = forecast.conf_int()
-                progress_bar.progress(75)
-
-                # Visualization
-                status_container.update(label="**5/6** Generating visualizations...", state="running")
-                
-                if plot_type == "Matplotlib":
-                    fig = plot_multiple_forecasts(
-                        historical={
-                            'generated': generated,
-                            'cost': cost_weekly,
-                            'consumed': consumed_weekly
-                        },
-                        forecasts=forecasts
-                    )
-                else:  # Plotly
-                    fig = create_plotly_forecast_chart(
-                        historical={
-                            'generated': generated,
-                            'cost': cost_weekly,
-                            'consumed': consumed_weekly
-                        },
-                        forecasts=forecasts
-                    )
-                progress_bar.progress(90)
-
-                # Results display
-                status_container.update(label="**6/6** Displaying results...", state="running")
-                
-                # Enhanced summary cards
-                st.subheader("Forecast Summary")
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    st.markdown(f"""
-                    <div class="summary-card" style="border-left: 4px solid #FFA726; background: #ffd588;">
-                        <div class="summary-icon">⚡</div>
-                        <h3 style="margin:0;font-size:18px;">Generation</h3>
-                        <p style="font-size:26px;font-weight:bold;margin:10px 0;">{forecasts['generated']['values'].max():.2f} kW</p>
-                        <p style="margin:0;font-size:14px;color:#666;">Peak forecasted generation</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                with col2:
-                    st.markdown(f"""
-                    <div class="summary-card" style="border-left: 4px solid #EF5350; background: #ff7777;">
-                        <div class="summary-icon">💲</div>
-                        <h3 style="margin:0;font-size:18px;">Cost</h3>
-                        <p style="font-size:26px;font-weight:bold;margin:10px 0;">${forecasts['cost']['values'].mean():.2f}</p>
-                        <p style="margin:0;font-size:14px;color:#666;">Avg. cost per kWh</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                with col3:
-                    st.markdown(f"""
-                    <div class="summary-card" style="border-left: 4px solid #66BB6A; background: #87bd7a;">
-                        <div class="summary-icon">🔋</div>
-                        <h3 style="margin:0;font-size:18px;">Consumption</h3>
-                        <p style="font-size:26px;font-weight:bold;margin:10px 0;">{forecasts['consumed']['values'].sum():.0f} kWh</p>
-                        <p style="margin:0;font-size:14px;color:#666;">Total consumption forecast</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                # Show plot in expandable section
-                with st.expander("Forecast Visualization", expanded=True):
-                    if plot_type == "Matplotlib":
-                        st.pyplot(fig)
-                    else:  # Plotly
-                        st.plotly_chart(fig, use_container_width=True)
-                
-                # Data export
-                with st.expander("Data Export", expanded=False):
-                    # 1) Aggregate hourly generation into daily sums
-                    gen_series = pd.Series(
-                        forecasts['generated']['values'],
-                        index=pd.DatetimeIndex(forecasts['generated']['dates'])
-                    )
-                    gen_daily = gen_series.resample('D').sum()
-
-                    # 2) Turn weekly cost/consumption into daily values
-                    cost_series = pd.Series(
-                        forecasts['cost']['values'],
-                        index=pd.DatetimeIndex(forecasts['cost']['dates'])
-                    )
-                    cons_series = pd.Series(
-                        forecasts['consumed']['values'],
-                        index=pd.DatetimeIndex(forecasts['consumed']['dates'])
-                    )
-
-                    # forward‐fill the same weekly value to each day, then split evenly
-                    cost_daily = cost_series.resample('D').ffill() / 7
-                    cons_daily = cons_series.resample('D').ffill() / 7
-
-                    # 3) Build a daily‐frequency DataFrame
-                    daily_index = gen_daily.index  # all the days you have generation for
-                    forecast_df = pd.DataFrame({
-                        'date':                   daily_index,
-                        'generation_kwh':         gen_daily.values,
-                        'cost_per_kwh':           cost_daily.reindex(daily_index).values,
-                        'consumption_kwh':        cons_daily.reindex(daily_index).values,
-                    })
-
-                    # then your CSV export as before:
-                    csv = forecast_df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Forecast Data (CSV)",
-                        data=csv,
-                        file_name=f"solar_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-
-                    if show_raw_data:
-                        st.dataframe(forecast_df.head(20), use_container_width=True)
-
-                progress_bar.progress(100)
-                status_container.update(label="Forecast pipeline completed successfully!", state="complete")
-
-            except Exception as e:
-                # Error handling that won't reference undefined variables
-                if 'progress_bar' in locals():
-                    progress_bar.progress(0)
-                if 'status_container' in locals():
-                    status_container.update(label="Pipeline Error", state="error", expanded=True)
-                    status_container.write(f"""
-                    ```
-                    {str(e)}
-                    ```
-                    **Troubleshooting Steps:**
-                    1. Check model files exist in /models/
-                    2. Verify data files in /data/preprocessed/
-                    3. Ensure all dependencies are installed
-                    """)
-                else:
-                    st.error(f"""
-                    **Pipeline Error**
-                    ```
-                    {str(e)}
-                    ```
-                    **Troubleshooting Steps:**
-                    1. Check model files exist in /models/
-                    2. Verify data files in /data/preprocessed/
-                    3. Ensure all dependencies are installed
-                    """)
-
-    # Tab 2: Historical Analysis
-    with tab2:
-        st.subheader("Historical Data Analysis")
-        st.info("Select a date range in the sidebar to view historical data analysis")
+    # === HISTORICAL DATA & CONFIG INFO TABS ===
+    with tab_details:
+        st.header("🛠️ Configuration Information")
+        st.info("This tab shows the key parameters loaded from your `config.yaml` file, which define how the models were trained and how the application runs.")
         
-        # Placeholder for historical analysis charts
-        st.markdown("#### Energy Generation History")
-        # This would be replaced with actual historical data plotting
-        st.line_chart({"Generation (kW)": [random.random() * 10 + 20 for _ in range(30)]})
-        
-        with st.expander("Monthly Trends", expanded=False):
-            st.markdown("Historical monthly generation and consumption patterns would appear here")
-    
-# Function to create Plotly charts for forecasts
-def create_plotly_forecast_chart(historical, forecasts):
-    # Create subplots with 3 rows
-    fig = make_subplots(rows=3, cols=1, 
-                        subplot_titles=("Energy Generation", "Energy Cost", "Energy Consumption"),
-                        vertical_spacing=0.1,
-                        shared_xaxes=True)
-    
-    # Colors for consistency
-    colors = {
-        'generated': '#FFA726',
-        'cost': '#EF5350', 
-        'consumed': '#66BB6A'
-    }
-    
-    # Add Generation data and forecast
-    fig.add_trace(
-        go.Scatter(
-            x=historical['generated'].index,
-            y=historical['generated'].values,
-            mode='lines',
-            name='Historical Generation',
-            line=dict(color=colors['generated'], width=2)
-        ),
-        row=1, col=1
-    )
-    
-    fig.add_trace(
-        go.Scatter(
-            x=forecasts['generated']['dates'], 
-            y=forecasts['generated']['values'],
-            mode='lines',
-            name='Forecast Generation',
-            line=dict(color=colors['generated'], width=2, dash='dash')
-        ),
-        row=1, col=1
-    )
-    
-    # Add Cost data and forecast
-    fig.add_trace(
-        go.Scatter(
-            x=historical['cost'].index,
-            y=historical['cost'].values,
-            mode='lines',
-            name='Historical Cost',
-            line=dict(color=colors['cost'], width=2)
-        ),
-        row=2, col=1
-    )
-    
-    fig.add_trace(
-        go.Scatter(
-            x=forecasts['cost']['dates'], 
-            y=forecasts['cost']['values'],
-            mode='lines',
-            name='Forecast Cost',
-            line=dict(color=colors['cost'], width=2, dash='dash')
-        ),
-        row=2, col=1
-    )
-    
-    # Add Cost confidence intervals if available
-    if 'conf_int' in forecasts['cost']:
-        fig.add_trace(
-            go.Scatter(
-                x=forecasts['cost']['dates'],
-                y=forecasts['cost']['conf_int'].iloc[:, 0],
-                line=dict(color='rgba(239, 83, 80, 0.0)'),
-                showlegend=False
-            ),
-            row=2, col=1
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=forecasts['cost']['dates'],
-                y=forecasts['cost']['conf_int'].iloc[:, 1],
-                fill='tonexty',
-                fillcolor='rgba(239, 83, 80, 0.2)',
-                line=dict(color='rgba(239, 83, 80, 0.0)'),
-                name='Cost 95% CI'
-            ),
-            row=2, col=1
-        )
-    
-    # Add Consumption data and forecast
-    fig.add_trace(
-        go.Scatter(
-            x=historical['consumed'].index,
-            y=historical['consumed'].values,
-            mode='lines',
-            name='Historical Consumption',
-            line=dict(color=colors['consumed'], width=2)
-        ),
-        row=3, col=1
-    )
-    
-    fig.add_trace(
-        go.Scatter(
-            x=forecasts['consumed']['dates'], 
-            y=forecasts['consumed']['values'],
-            mode='lines',
-            name='Forecast Consumption',
-            line=dict(color=colors['consumed'], width=2, dash='dash')
-        ),
-        row=3, col=1
-    )
-    
-    # Add Consumption confidence intervals if available
-    if 'conf_int' in forecasts['consumed']:
-        fig.add_trace(
-            go.Scatter(
-                x=forecasts['consumed']['dates'],
-                y=forecasts['consumed']['conf_int'].iloc[:, 0],
-                line=dict(color='rgba(102, 187, 106, 0.0)'),
-                showlegend=False
-            ),
-            row=3, col=1
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=forecasts['consumed']['dates'],
-                y=forecasts['consumed']['conf_int'].iloc[:, 1],
-                fill='tonexty',
-                fillcolor='rgba(102, 187, 106, 0.2)',
-                line=dict(color='rgba(102, 187, 106, 0.0)'),
-                name='Consumption 95% CI'
-            ),
-            row=3, col=1
-        )
-    
-    # Update layout
-    fig.update_layout(
-        height=800,
-        title_text="Energy Forecasts",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        hovermode="x unified"
-    )
-    
-    # Update y-axis labels
-    fig.update_yaxes(title_text="Energy (kW)", row=1, col=1)
-    fig.update_yaxes(title_text="Cost ($/kWh)", row=2, col=1)
-    fig.update_yaxes(title_text="Energy (kWh)", row=3, col=1)
-    
-    return fig
+        st.subheader("File & Data Paths")
+        dc = CONFIG['data_paths']
+        st.json({
+            "Preprocessed Data Directory": dc.get('preprocessed_dir'),
+            "Model Artifacts Directory": dc.get('models_dir'),
+            "Generation Data File (Hourly)": dc.get('energy_generated_csv'),
+            "LSTM Target Column": dc.get('lstm_target_column_name'),
+            "Cost Data File (Weekly)": dc.get('energy_cost_csv'),
+            "Consumption Data File (Weekly)": dc.get('energy_consumed_csv'),
+        })
 
+        st.subheader("LSTM Reference System")
+        ref_sys = CONFIG.get('lstm_reference_system', {})
+        st.json({
+            "Number of Panels": ref_sys.get('num_panels'),
+            "Capacity per Panel (Watts)": ref_sys.get('panel_capacity_w')
+        })
+
+        st.subheader("Key LSTM Model & Training Parameters")
+        lstm_p = CONFIG['lstm_params']
+        prep_p = CONFIG['preprocessing']
+        train_p = CONFIG['training_params']
+        st.json({
+            "Input Features": lstm_p.get('input_size'),
+            "Hidden Layer Size": lstm_p.get('hidden_size'),
+            "Number of Layers": lstm_p.get('num_layers'),
+            "Dropout Rate": lstm_p.get('dropout'),
+            "Bidirectional": lstm_p.get('bidirectional'),
+            "Output Chunk Size (hours)": lstm_p.get('output_chunk_size'),
+            "Input Sequence Length (hours)": prep_p.get('lstm_time_steps'),
+            "Batch Size": train_p.get('lstm_batch_size'),
+            "Initial Learning Rate": train_p.get('lstm_learning_rate'),
+            "Weight Decay": train_p.get('lstm_weight_decay')
+        })
+        
+        st.subheader("Key SARIMA Model Parameters")
+        sarima_p = CONFIG.get('sarima_params', {})
+        st.markdown("**Cost Model:**")
+        st.json(sarima_p.get('cost', {}))
+        st.markdown("**Consumption Model:**")
+        st.json(sarima_p.get('consumed', {}))
+
+# --- Run the App ---
 if __name__ == "__main__":
-    # Add import for random at the top of the file if you keep the placeholder data
-    import random
-    main_interface()
+    run_app()

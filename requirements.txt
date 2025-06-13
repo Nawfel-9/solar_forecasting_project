@@ -8,6 +8,8 @@ tqdm>=4.60
 statsmodels>=0.12
 joblib>=1.0
 plotly>=5.0
+PyYAML>=5.0
+optuna
 
 # IMPORTANT: Install PyTorch separately first (If you are using ROCm use the command below)
 # pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.3
