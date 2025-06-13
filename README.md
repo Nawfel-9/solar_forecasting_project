@@ -5,7 +5,6 @@ Ce projet met en œuvre un pipeline de Machine Learning de bout en bout pour fou
 À partir de données historiques, nous modélisons la production d'énergie solaire, la consommation électrique et le coût de l'électricité pour fournir une simulation financière personnalisée à l'utilisateur.
 
 ![Bannière du projet](utils/Banner.png)
-*(Remplacez cette bannière par une capture d'écran ou un GIF de votre application Streamlit)*
 
 ---
 
