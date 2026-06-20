@@ -1,159 +1,173 @@
-# 🌞 Prévisionniste d'Énergie Solaire & Estimateur d'Économies
+# 🌞 Solar Panel Forecast & Savings Estimator
 
-Ce projet met en œuvre un pipeline de Machine Learning de bout en bout pour fournir une application web interactive qui estime les économies financières réalisables grâce à une installation de panneaux solaires.
+An end-to-end machine-learning pipeline that estimates the financial savings achievable from a
+solar panel installation. The app forecasts solar generation, electricity consumption, and
+electricity cost, then runs an hourly energy-balance simulation so users can size and evaluate
+a virtual solar system interactively.
 
-À partir de données historiques, nous modélisons la production d'énergie solaire, la consommation électrique et le coût de l'électricité pour fournir une simulation financière personnalisée à l'utilisateur.
-
-![Bannière du projet](utils/Banner.png)
-
----
-
-## ✨ Fonctionnalités Clés
-
-* **Modélisation Hybride :** Utilisation d'un modèle **LSTM avec Attention** pour la prévision complexe de la génération solaire et de modèles statistiques **SARIMA** pour la consommation et les coûts saisonniers.
-* **Pipeline de Données Complet :** Scripts pour le traitement des données brutes, l'entraînement des modèles et l'inférence en temps réel.
-* **Simulation Financière Dynamique :** Calcule un bilan énergétique horaire (autoconsommation, importation, exportation) pour estimer les économies avec précision.
-* **Interface Interactive :** Une application **Streamlit** permet de configurer un système solaire virtuel et de visualiser instantanément l'impact financier.
-* **Optimisation d'Hyperparamètres :** Intégration d'**Optuna** pour la recherche systématique des meilleurs paramètres pour le modèle LSTM.
-
-## 🛠️ Technologies Utilisées
-
-* **Langage :** Python 3.9+
-* **Analyse de Données :** Pandas, NumPy
-* **Apprentissage Profond :** PyTorch
-* **Modélisation Statistique :** Statsmodels, Scikit-learn
-* **Simulation Photovoltaïque :** PVLib
-* **Application Web :** Streamlit
-* **Visualisation :** Plotly, Matplotlib
+![Project banner](docs/Banner.png)
 
 ---
 
-## 🚀 Installation et Lancement
+## Documentation
 
-Ce guide vous expliquera comment configurer l'environnement, préparer les données, entraîner les modèles et exécuter l'application.
+| Doc | Contents |
+|---|---|
+| [Architecture](docs/architecture.md) | System design, module map, config-driven design overview |
+| [Data Pipeline](docs/data_pipeline.md) | Raw data → preprocessed CSVs, feature engineering, train/val/test splits |
+| [Models](docs/models.md) | LSTM+Attention and SARIMA architecture, training flows |
+| [Inference Pipeline](docs/inference_pipeline.md) | Step-by-step walkthrough of what happens when you click *Generate Forecast* |
 
-### 1. Prérequis
+---
 
-* **Git** : Nécessaire pour cloner le dépôt. [git-scm.com](https://git-scm.com/)
-* **Python** : Version 3.9 ou plus récente. [python.org](https://www.python.org/)
+## What the App Does
 
-### 2. Configuration de l'Environnement et Installation
+1. **Forecasts solar generation** using a bidirectional LSTM with Attention, trained on ~14 years of hourly irradiance data for New York City.
+2. **Forecasts electricity cost and consumption** using SARIMA models, trained on NYC utility billing records.
+3. **Runs a financial simulation**: for any solar system you configure (number of panels, capacity, efficiency), it calculates self-consumption, grid import, export revenue, and net savings over the chosen forecast horizon.
+4. **Renders interactive charts** via Plotly (or static Matplotlib) showing historical and forecasted generation, cost, and consumption side by side.
 
-#### a. Cloner le Dépôt
+---
+
+## Quick Start
+
+### Requirements
+
+- Python 3.10 or newer
+- A working [Conda](https://docs.conda.io/en/latest/miniconda.html) or virtualenv setup
+- PyTorch installed separately (see below)
+
+### 1 · Clone & create environment
 
 ```bash
 git clone https://github.com/Nawfel-9/solar_forecasting_project
 cd solar_forecasting_project
-```
 
-#### b. Créer et Activer un Environnement Virtuel
-
-Il est fortement recommandé d'utiliser un environnement virtuel pour isoler les dépendances du projet.
-
-Créez l'environnement (par exemple, nommé `venv`) :
-
-```bash
-python -m venv venv
-```
-
-Activez ensuite l'environnement :
-
-- Sur **Windows** :
-
-```bash
-venv\Scripts\activate
-```
-
-- Sur **Linux/macOS** :
-
-```bash
-source venv/bin/activate
-```
-
-*Note : Si vous utilisez Conda :*
-
-```bash
-conda create -n solar_env python=3.9 -y
+conda create -n solar_env python=3.11 -y
 conda activate solar_env
 ```
 
-#### c. Installer les Dépendances
+### 2 · Install PyTorch
 
-Une fois l'environnement activé, installez les bibliothèques requises :
+Choose the command that matches your hardware:
+
+```bash
+# NVIDIA GPU (CUDA)
+pip install --no-cache-dir torch torchvision torchaudio
+
+# AMD GPU (ROCm)
+pip install --no-cache-dir torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/rocm6.3
+
+# CPU only
+pip install --no-cache-dir torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cpu
+```
+
+> `--no-cache-dir` prevents `ValueError: Memoryview is too large` from PyTorch's large wheel files.
+
+### 3 · Install remaining dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Préparation et Entraînement (Optionnel)
-
-Suivez cette section uniquement si vous souhaitez recréer les modèles à partir des données brutes. Sinon, passez directement à l'étape 4.
-
-#### a. Télécharger les Données Brutes
-
-Téléchargez l'ensemble de données depuis Kaggle : **Solar Power Generation and Consumption Dataset**. 
-
-Placez les fichiers extraits dans un répertoire `data/` à la racine du projet.
-
-#### b. Exécuter les Scripts de Prétraitement
-
-Assurez-vous que les chemins de fichiers dans `config.yaml` sont corrects.
-
-Exécutez les scripts suivants :
-
-```bash
-python consumed_cost_energy_data.py
-python generated_energy_estimation.py
-```
-
-#### c. Entraîner les Modèles
-
-Entraînez les modèles avec :
-
-```bash
-# Entraînement des modèles SARIMA (rapide)
-python train/train_sarima.py
-
-# Entraînement du modèle LSTM (plus long)
-# Assurez-vous que 'run_optuna_search' est à 'false' dans config.yaml
-python train/train_lstm.py
-```
-*Note: L'entrainement de SARIMA est necessaire par contre lstm a deja un checkpoint.*
-
-### 4. Lancer l'Application Streamlit
-
-Lancez l'application avec :
+### 4 · Launch the app
 
 ```bash
 streamlit run app.py
 ```
 
-*Si la commande streamlit n'est pas reconnue :*
+Opens at [http://localhost:8501](http://localhost:8501).  The LSTM checkpoint and scaler are
+committed to the repo — no training needed to run the app.
 
-```bash
-python -m streamlit run app.py
-```
-
-L'application s'ouvrira automatiquement sur [http://localhost:8501](http://localhost:8501).
-
-### 5. Arrêter l'Application
-
-Dans le terminal, appuyez sur `Ctrl+C` pour arrêter le serveur Streamlit.
+> **SARIMA models are not committed.** The app will report an error for cost/consumption
+> forecasts until you train them: `python train/train_sarima.py` (takes a few minutes).
 
 ---
 
-## 📂 Structure du Projet
+## Using the App
 
-```text
-.
-├── data/                          # Données brutes et prétraitées
-├── models/                        # Définitions des modèles et checkpoints
-├── notebook/                      # Notebook contenant la recherche faite
-├── train/                         # Scripts d'entraînement
-├── utils/                         # Fonctions utilitaires (prétraitement, visualisation, etc.)
-├── app.py                         # Application Streamlit principale
-├── config.yaml                    # Configuration globale
-├── requirements.txt               # Liste des dépendances
-├── consumed_cost_energy_data.py   # Produit energy_consumed.csv...
-├── generated_energy_estimation.py # Produit energy_generated.csv...
-└── README.md                      # Ce fichier
+### Sidebar controls
+
+| Control | What it does |
+|---|---|
+| **Forecast Horizon** | 1 Month / 6 Months / 1 Year — controls how far ahead the models forecast |
+| **Number of Solar Panels** | How many panels your hypothetical system has |
+| **Capacity per Panel (kW)** | Rated capacity of each panel |
+| **System Efficiency (%)** | Combined loss factor (panel degradation, inverter, wiring) |
+| **Export Tariff ($/kWh)** | Revenue earned for surplus energy sent back to the grid |
+| **Chart Engine** | Plotly (interactive zoom/hover) or Matplotlib (static) |
+
+### Tabs
+
+- **Forecast Dashboard** — click *Generate Forecast & Estimate Savings* to run the full pipeline; shows KPI metrics, visual forecasts, and a detailed financial breakdown.
+- **Historical Data** — browse the raw historical generation, cost, and consumption series.
+- **Config Info** — inspect the key parameters loaded from `config.yaml` (model architecture, SARIMA orders, reference system specs).
+
+---
+
+## (Optional) Rebuild from Raw Data
+
+Only needed if you want to regenerate the preprocessed CSVs or retrain models from scratch.
+
+### Get the raw datasets
+
+Place in `data/`:
+
+| File | Source |
+|---|---|
+| `generated_2009_2023.csv` | Kaggle — *Solar Power Generation and Consumption Dataset* |
+| `Electric_Consumption_And_Cost__2010_-_Feb_2025__20250311.csv` | NYC Open Data |
+
+### Run preprocessing
+
+```bash
+python scripts/build_generation_data.py   # → data/preprocessed/energy_generated.csv
+python scripts/build_consumption_data.py  # → data/preprocessed/energy_consumed.csv
+                                          #    data/preprocessed/energy_cost.csv
+```
+
+### Train models
+
+```bash
+python train/train_sarima.py   # fast (~minutes)
+python train/train_lstm.py     # slow; GPU recommended
+```
+
+To tune the LSTM automatically with Optuna, set `training_params.run_optuna_search: true` in
+`config.yaml` before running `train_lstm.py`.
+
+---
+
+## Project Layout
+
+```
+solar_forecasting_project/
+├── app.py                         ← Streamlit app (entry point)
+├── config.yaml                    ← All paths, hyperparameters, and app defaults
+├── requirements.txt
+├── scripts/                       ← One-time data preparation
+├── models/                        ← Model code + trained artifacts
+│   └── artifacts/                 ← lstm_solar_generator.pth, lstm_scaler.pkl, …
+├── train/                         ← Training scripts
+├── utils/                         ← Shared utilities (preprocessing, evaluation, visualisation)
+├── data/preprocessed/             ← Pre-built CSVs (committed)
+├── reports/figures/               ← Training and diagnostic plots
+├── docs/                          ← Architecture and pipeline documentation
+└── notebook/                      ← Exploratory analysis notebook
+```
+
+---
+
+## Technology Stack
+
+| Category | Libraries |
+|---|---|
+| Deep learning | PyTorch (LSTM + Attention) |
+| Statistical modelling | Statsmodels (SARIMA), Scikit-learn |
+| Solar physics simulation | PVLib |
+| Hyperparameter optimisation | Optuna |
+| Web app | Streamlit |
+| Visualisation | Plotly, Matplotlib |
+| Data | Pandas, NumPy |

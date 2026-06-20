@@ -1,2 +1,24 @@
-/__pycache__
-/results
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local scratch / run outputs (not committed)
+results/
+
+# Large raw data files (not committed — download separately; see README)
+data/generated_2009_2023.csv
+data/Electric_Consumption_And_Cost__2010_-_Feb_2025__20250311.csv

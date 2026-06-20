@@ -274,10 +274,12 @@ def train_lstm_with_config_params():
     else:
         print("\nWarning: No best model state was captured to save.")
 
-    # Plot the training history and save the figure
+    # Plot the training history and save the figure to the figures directory
     history_fig = plot_lstm_training_history(training_history, title=f"LSTM Training - {data_cfg['lstm_model_name']}")
     if history_fig:
-        plot_save_path = Path(CONFIG['data_paths']['models_dir']) / "lstm_training_history_final_model.png"
+        figures_dir = Path(CONFIG['data_paths']['figures_dir'])
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        plot_save_path = figures_dir / "lstm_training_history_final_model.png"
         history_fig.savefig(plot_save_path)
         print(f"LSTM training history plot saved to {plot_save_path}")
         plt.close(history_fig)

@@ -1,25 +1,51 @@
-# Core dependencies
-pandas>=2.0
-matplotlib>=3.3
-pvlib>=0.9
-streamlit>=1.45
-scikit-learn>=1.6
-tqdm>=4.60
-statsmodels>=0.12
-joblib>=1.0
-plotly>=5.0
-PyYAML>=5.0
-optuna
+# Solar Forecasting Project — Python Dependencies
+# Tested with Python 3.10+ (3.11 recommended)
+# Versions recorded from the development environment (conda env: ai).
 
-# IMPORTANT: Install PyTorch separately first (If you are using ROCm use the command below)
-# pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.3
+# Core data & ML
+pandas>=2.0,==2.3.3
+numpy>=1.24,==2.3.3
+scikit-learn>=1.6,==1.7.2
+joblib>=1.0,==1.5.2
 
-# For NVIDIA GPUs, use the command below
-# pip3 install --no-cache-dir torch torchvision torchaudio
+# Deep learning  (PyTorch — install SEPARATELY; see note below)
+# torch>=2.0
 
-# For CPU only (didn't test on cpu, it will be slower but should work properly), use the command below
-# pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# Statistical modelling
+statsmodels>=0.14,==0.14.6
 
-# "--no-cache-dir" is preferable to avoid cache issues due to the large size of the model files. => "ValueError: Memoryview is too large"
+# Solar physics
+pvlib>=0.9,==0.15.2
 
-# Note: I'm using rx 6650 xt 
+# Hyperparameter optimisation
+optuna>=3.0,==4.9.0
+
+# Visualisation
+matplotlib>=3.7,==3.10.7
+plotly>=5.0,==6.5.0
+
+# Web app
+streamlit>=1.30,==1.52.1
+
+# Utilities
+PyYAML>=6.0,==6.0.3
+tqdm>=4.60,==4.67.1
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PyTorch Installation (REQUIRED — not pip-installable from the index above)
+# Choose the command matching your hardware:
+#
+#   ROCm (AMD GPU):
+#     pip install --no-cache-dir torch torchvision torchaudio \
+#         --index-url https://download.pytorch.org/whl/rocm6.3
+#
+#   NVIDIA GPU (CUDA):
+#     pip install --no-cache-dir torch torchvision torchaudio
+#
+#   CPU only:
+#     pip install --no-cache-dir torch torchvision torchaudio \
+#         --index-url https://download.pytorch.org/whl/cpu
+#
+# --no-cache-dir is recommended to avoid "Memoryview is too large" errors
+# caused by PyTorch's large wheel files.
+# ─────────────────────────────────────────────────────────────────────────────

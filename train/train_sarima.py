@@ -69,7 +69,9 @@ def train_and_save_sarima_model(
                     if lags_for_acf > 0 :
                         residuals_fig = plot_residuals_autocorrelation(cleaned_residuals, lags=lags_for_acf, model_name=f"{series_name_for_log} (In-sample)")
                         if residuals_fig:
-                            plot_save_path = Path(CONFIG['data_paths']['models_dir']) / f"sarima_{series_name_for_log.lower().replace(' ', '_').replace('/', '_')}_insample_residuals_acf.png"
+                            figures_dir = Path(CONFIG['data_paths']['figures_dir'])
+                            figures_dir.mkdir(parents=True, exist_ok=True)
+                            plot_save_path = figures_dir / f"sarima_{series_name_for_log.lower().replace(' ', '_').replace('/', '_')}_insample_residuals_acf.png"
                             residuals_fig.savefig(plot_save_path)
                             print(f"In-sample residuals ACF plot for {series_name_for_log} saved to {plot_save_path}")
                             plt.close(residuals_fig)
